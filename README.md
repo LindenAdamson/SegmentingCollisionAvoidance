@@ -10,9 +10,9 @@ Demoing the algorithm's current functionality can be done in [Colab](https://col
 ### Complete
 - Tracking of objects between frames
 - Isolation of tracked objects' placement in 3D space from background, other noise
+- Placement of tracked objects in space where collisions can be detected
 ### To Come
 - Utilization of GPU to achieve real-time use case feasibility
-- Placement of tracked objects in space where collisions can be detected
 - Predict tracked objects' future movements
 - Determine safe trajectories for the ego vehicle
 ### In Consideration
