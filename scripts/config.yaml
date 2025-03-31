@@ -7,3 +7,5 @@ scope: [20, 2] # [distance, height]
 tracking_imgs: 2
 prediction_imgs: 2
 min_object_area: .005 # 2500 / 540 * 960
+sky_brightness_percent: .2 # top x% brightness pixels = sky
+max_percent_sky_overlap: .9

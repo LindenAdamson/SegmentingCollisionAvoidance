@@ -1,5 +1,3 @@
 data/
+oakd_data/
 scripts/FastSAM-s.pt
-scripts/gpu_test.py
-scripts/ultralitics_test.py
-scripts/depth_segmentation_experimentation.ipynb
