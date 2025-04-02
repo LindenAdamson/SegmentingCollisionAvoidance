@@ -9,3 +9,14 @@ prediction_imgs: 2
 min_object_area: .005 # 2500 / 540 * 960
 sky_brightness_percent: .2 # top x% brightness pixels = sky
 max_percent_sky_overlap: .9
+max_percent_ground_overlap: .5
+number_edge_points: 50
+out_of_sight_lifetime: 2
+seconds_into_future: 3
+samples_per_second: 10
+file_mode_image_speed: .2
+length_front_to_back_wheels: 2.5 # distance from front to back wheels
+max_steering_angle: 30
+distance_steering_prediction: 15
+angle_samples: 51
+safe_distance: .5

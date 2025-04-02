@@ -1,3 +1,4 @@
 data/
 oakd_data/
-scripts/FastSAM-s.pt
+scripts/figs
+*.pt
