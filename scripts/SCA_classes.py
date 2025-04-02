@@ -88,11 +88,13 @@ class Segmentation_Collision_Avoidance:
         plt.tight_layout()
         return fig
     
-    def add_image_file(self, rgb, depth):
-        rgbImg = Image.open(rgb)
-        depthImg = np.asarray(Image.open(depth))[:,:,0].astype(float)
+    def add_demo_image_file(self, imgName):
+        Debug_Timer.start("open_img")
+        rgbImg = Image.open("/content/SegmentingCollisionAvoidance/oakd_data/test/rgb" + imgName + ".png")
+        depthImg = np.asarray(Image.open("/content/SegmentingCollisionAvoidance/oakd_data/test/depth" + imgName + ".png"))[:,:,0].astype(float)
         depthImg = -5.417 * depthImg / 100 + 9.125 # estimation
         depthImg = Image.fromarray(depthImg)
+        Debug_Timer.stop("open_img")
         self.resize_images(rgbImg, depthImg)
     
     @timeit
