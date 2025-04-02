@@ -8,13 +8,13 @@ The algorithm uses Ultralitic's FastSAM model as a first step. The dataset used 
 Demoing the algorithm's current functionality can be done in [Colab](https://colab.research.google.com/drive/1RuYl2oYogi_rdPMVeIv6bfQhAwWUqGbg?usp=sharing).
 ## Functionality
 ### Complete
-- Tracking of objects between frames
 - Isolation of tracked objects' placement in 3D space from background, other noise
-### In Progress
 - Predict tracked objects' future movements
+- Determine safe trajectories for the ego vehicle
+### In Progress
+- Tracking of objects between frames
 - Optimization for real-time use case feasibility
 ### To Come
-- Determine safe trajectories for the ego vehicle
 - Utilization of GPU for time consuming, parallelizable processes
 ### In Consideration
 - Support for depth information in point cloud format, eg from a LiDAR device 
