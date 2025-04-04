@@ -25,15 +25,17 @@ class Segmentation_Collision_Avoidance:
         self.window = Window()
 
     def plot(self):
+        plt_colors = list(mcolors.TABLEAU_COLORS.values())
         fig = plt.figure()
         plt.subplot(2, 2, 1)
         plt.title('Tracked Objects')
         plt.imshow(self.window.current_frame.rgbImg)
-        colors = {}
+        # colors = {}
         obj_list = list(self.window.objects_in_scope)
         for obj in obj_list:
             outline = np.concatenate((obj.outline, [obj.outline[0,:]]))
-            colors[obj.id] = plt.plot(outline[:,0],outline[:,1])[-1].get_color()
+            # colors[obj.id] = plt.plot(outline[:,0],outline[:,1])[-1].get_color()
+            plt.plot(outline[:,0],outline[:,1],color=plt_colors[obj.id % len(plt_colors)])
         plt.subplot(2, 2, 3)
         plt.title('Top Down 2D Prediction')
         plt.scatter(0,0, c='k')
@@ -45,18 +47,21 @@ class Segmentation_Collision_Avoidance:
         for i in range(len(obj_list)):
             obj = obj_list[argsort[len(obj_list) - i - 1]]
             circle = obj.circle
-            show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=colors[obj.id])
+            # show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=colors[obj.id])
+            show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=plt_colors[obj.id % len(plt_colors)])
             ax.add_patch(show_fit_circle)
         for pred in self.window.predictions.values():
             if pred.future is not None:
-                if pred.id in colors:
-                    color = colors[pred.id]
-                else:
-                    color = 'grey'
+                # if pred.id in colors:
+                #     color = colors[pred.id]
+                # else:
+                #     # color = 'grey'
+                #     continue
+                color=plt_colors[pred.id % len(plt_colors)]
                 num = 5
                 for i in range(num):
-                    by = int(pred.future.shape[0] / num)
-                    c = pred.future[i * by,:]
+                    # by = int(pred.future.shape[0] / num)
+                    c = pred.future[i,:]
                     show_fit_circle = plt.Circle((c[0], c[1]), c[2], color=color, fill=False)
                     ax.add_patch(show_fit_circle)
         plt.axis('equal')
@@ -87,6 +92,76 @@ class Segmentation_Collision_Avoidance:
         plt.axis('equal')
         plt.tight_layout()
         return fig
+    
+    def plot2(self):
+        plt_colors = list(mcolors.TABLEAU_COLORS.values())
+        fig = plt.figure()
+        plt.subplot(2, 2, 1)
+        # plt.title('Tracked Objects')
+        plt.imshow(self.window.current_frame.rgbImg)
+        # colors = {}
+        obj_list = list(self.window.objects_in_scope)
+        for obj in obj_list:
+            outline = np.concatenate((obj.outline, [obj.outline[0,:]]))
+            # colors[obj.id] = plt.plot(outline[:,0],outline[:,1])[-1].get_color()
+            plt.plot(outline[:,0],outline[:,1],color=plt_colors[obj.id % len(plt_colors)])
+        plt.subplot(2, 2, 3)
+        # plt.title('Top Down 2D Prediction')
+        plt.scatter(0,0, c='k')
+        ax = plt.gcf().gca()
+        areas = np.empty(len(obj_list))
+        for i in range(len(obj_list)):
+            areas[i] = obj_list[i].circle[2]
+        argsort = areas.argsort()
+        for i in range(len(obj_list)):
+            obj = obj_list[argsort[len(obj_list) - i - 1]]
+            circle = obj.circle
+            # show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=colors[obj.id])
+            show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=plt_colors[obj.id % len(plt_colors)])
+            ax.add_patch(show_fit_circle)
+        for pred in self.window.predictions.values():
+            if pred.future is not None:
+                # if pred.id in colors:
+                #     color = colors[pred.id]
+                # else:
+                #     # color = 'grey'
+                #     continue
+                color=plt_colors[pred.id % len(plt_colors)]
+                num = 5
+                for i in range(num):
+                    # by = int(pred.future.shape[0] / num)
+                    c = pred.future[i,:]
+                    show_fit_circle = plt.Circle((c[0], c[1]), c[2], color=color, fill=False)
+                    ax.add_patch(show_fit_circle)
+        plt.axis('equal')
+        plt.subplot(2, 2, 2)
+        frame = self.window.current_frame
+        nan_depthImg = np.zeros(frame.depthImg.shape)
+        nan_depthImg = np.where(frame.low_confidence, np.nan, frame.depthImg)
+        plt.imshow(nan_depthImg)
+        for obj in self.window.objects_in_scope:
+            mask = np.where(obj.segMask,0,np.nan)
+            plt.imshow(mask)
+        plt.subplot(2, 2, 4)
+        plt.scatter(0,0,c='k')
+        ax = plt.gcf().gca()
+        plt.axis('equal')
+        for obj in self.window.objects_in_scope:
+            mask = obj.segMask
+            top_down = np.array([frame.cartImg[mask,0].flatten(), frame.cartImg[mask,2].flatten()]).T
+            plt.scatter(top_down[:,0],top_down[:,1],s=1,c=plt_colors[obj.id % len(plt_colors)])
+            circle = obj.circle
+            show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], fill=False)
+            ax.add_patch(show_fit_circle)
+        plt.tight_layout()
+        return fig
+    
+    def add_image_file(self, rgb, depth):
+        rgbImg = Image.open(rgb)
+        depthImg = np.asarray(Image.open(depth))[:,:,0].astype(float)
+        depthImg = -5.417 * depthImg / 100 + 9.125 # estimation
+        depthImg = Image.fromarray(depthImg)
+        self.resize_images(rgbImg, depthImg)
     
     def add_demo_image_file(self, imgName):
         Debug_Timer.start("open_img")
@@ -190,17 +265,22 @@ class Window:
         if len(self.frames) == self.tracking_imgs:
             self.frames.pop(0)
         self.frames.append(self.current_frame)
-        if len(self.frames) == self.tracking_imgs:
-            self.objects_in_scope = self.get_objects_in_scope()
-            for obj in self.objects_in_scope:
-                self.current_frame.fit_circle(obj)
-        else:
-            self.objects_in_scope = []
+        # if len(self.frames) == self.tracking_imgs:
+        #     self.objects_in_scope = self.get_objects_in_scope()
+        #     for obj in self.objects_in_scope:
+        #         self.current_frame.fit_circle(obj)
+        # else:
+        #     self.objects_in_scope = []
+        self.objects_in_scope = []
+        for object in self.current_frame.objects:
+            if object.in_scope:
+                self.objects_in_scope.append(object)
+                self.current_frame.fit_circle(object)
         for obj in self.objects_in_scope:
             if obj.id in self.predictions:
                 self.predictions[obj.id].add_circle(obj)
             else:
-                pred = Prediction(obj)
+                pred = Prediction(obj, True)
                 self.predictions[obj.id] = pred
         for pred in list(self.predictions.values()):
             if pred.past_lifetime() > Config.get("out_of_sight_lifetime"):
@@ -249,6 +329,7 @@ class Frame:
         self.objects = self.populate_objects()
         self.cartImg = self.make_cartesian()
         self.filter_objects()
+        self.consolidate_objects()
 
     def populate_objects(self):
         objects = []
@@ -263,28 +344,59 @@ class Frame:
     @timeit
     def filter_objects(self):
         img_size = Config.get("dimensions")[0] * Config.get("dimensions")[1]
-        min_area = Config.get("min_object_area")
         sky_bright_percent = Config.get("sky_brightness_percent")
         max_percent_sky_overlap = Config.get("max_percent_sky_overlap")
         max_percent_ground_overlap = Config.get("max_percent_ground_overlap")
         rgb_sum = np.sum(self.rgbImg, axis=2)
         max_bright = np.max(rgb_sum)
         bright_cutoff = max_bright * (1 - sky_bright_percent)
-        sky = np.where(rgb_sum > bright_cutoff, 1, 0)
-        ground = self.find_ground()
+        self.sky = np.where(rgb_sum > bright_cutoff, 1, 0)
+        self.ground = self.find_ground()
+        self.low_confidence = np.where(self.depthImg > Config.get("magic_trust_number"), 1, 0)
         for obj in self.objects:
             if obj.segMask is None:
                 obj.set_out_of_scope()
                 continue
-            if np.sum(obj.segMask & sky) / obj.area > max_percent_sky_overlap:
+            if np.sum(obj.segMask & self.sky) / obj.area > max_percent_sky_overlap:
                 obj.set_out_of_scope()
                 continue
-            if np.sum(obj.segMask & ground) / obj.area > max_percent_ground_overlap:
+            if np.sum(obj.segMask & self.ground) / obj.area > max_percent_ground_overlap:
                 obj.set_out_of_scope()
                 continue
-            obj.segMask = obj.segMask & np.logical_not(sky) & np.logical_not(ground)
-            if float(obj.area) / float(img_size) < min_area:
+            obj.segMask = obj.segMask & np.logical_not(self.sky) &\
+                np.logical_not(self.ground) & np.logical_not(self.low_confidence)
+            if float(np.sum(obj.segMask)) / float(img_size) < .002: #Config.get("min_object_area"):
                 obj.set_out_of_scope()
+
+    @timeit
+    def consolidate_objects(self):
+        obj_list = []
+        for obj in self.objects:
+            if obj.in_scope:
+                obj_list.append(obj)
+        num_obj = len(obj_list)
+        areas = np.empty(num_obj)
+        for i in range(num_obj):
+            obj = obj_list[i]
+            areas[i] = np.sum(obj.segMask)
+        argsort = areas.argsort()[::-1] # largest to smallest
+        grid = np.zeros(self.rgbImg.shape[0:2], dtype=int) - 1
+        for i in range(num_obj):
+            obj = obj_list[argsort[i]]
+            d = []
+            section = grid.flatten()[obj.segMask.flatten()]
+            for j in range(section.size):
+                if section[j] not in d:
+                    d.append(section[j])
+            for idx in d:
+                if idx == -1:
+                    continue
+                other_obj = obj_list[argsort[idx]]
+                if np.sum(np.logical_and(obj.segMask, other_obj.segMask)) / np.sum(obj.segMask)\
+                    > Config.get("object_overlap_percent"):
+                    other_obj.segMask = np.logical_or(obj.segMask, other_obj.segMask)
+                    obj.set_out_of_scope()
+            grid[np.logical_and(grid == -1, obj.segMask)] = i
 
     @timeit
     def make_cartesian(self):
@@ -314,7 +426,7 @@ class Frame:
             start = np.where(np.min(outline[:,0]) == outline[:,0])[0][0]
             # Debug_Timer.start("put in buckets")
             lda = .25
-            max_dist = .4
+            max_dist = 1
             max_angle = .5
             curr_bucket = np.max(outline[:,0]) ** 2
             prev_bucket = np.max(outline[:,0]) ** 2
@@ -344,7 +456,7 @@ class Frame:
             # Debug_Timer.start("find idx")
             dist = np.sum(np.square(buckets[:-1,:] - buckets[1:,:]), axis=1)
             angle = np.acos(abs(buckets[:-1,0] - buckets[1:,0]) ** 2 / dist)
-            done = 0
+            done = buckets.shape[0] - 1
             for i in range(buckets.shape[0] - 2):
                 if dist[i] > max_dist or abs(angle[i] - angle[i + 1]) > max_angle:
                     done = i + 1
@@ -479,7 +591,8 @@ class Prediction:
 
     def past_lifetime(self):
         if self.files_mode:
-            self.lifetime += Config.get("file_mode_image_speed")
+            # self.lifetime += Config.get("file_mode_image_speed")
+            self.lifetime += Config.get("out_of_sight_lifetime") * .6
             return self.lifetime
         else:
             return timer() - self.lifetime

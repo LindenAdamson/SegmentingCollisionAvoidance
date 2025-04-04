@@ -20,3 +20,5 @@ max_steering_angle: 30
 distance_steering_prediction: 15
 angle_samples: 51
 safe_distance: .5
+magic_trust_number: 8.45
+object_overlap_percent: .5
