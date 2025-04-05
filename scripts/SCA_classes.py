@@ -94,10 +94,11 @@ class Segmentation_Collision_Avoidance:
         return fig
     
     def plot2(self):
+        frame = self.window.current_frame
         plt_colors = list(mcolors.TABLEAU_COLORS.values())
         fig = plt.figure()
-        plt.subplot(2, 2, 1)
-        # plt.title('Tracked Objects')
+        plt.subplot(2, 3, 1)
+        plt.title('Tracked Objects')
         plt.imshow(self.window.current_frame.rgbImg)
         # colors = {}
         obj_list = list(self.window.objects_in_scope)
@@ -105,8 +106,8 @@ class Segmentation_Collision_Avoidance:
             outline = np.concatenate((obj.outline, [obj.outline[0,:]]))
             # colors[obj.id] = plt.plot(outline[:,0],outline[:,1])[-1].get_color()
             plt.plot(outline[:,0],outline[:,1],color=plt_colors[obj.id % len(plt_colors)])
-        plt.subplot(2, 2, 3)
-        # plt.title('Top Down 2D Prediction')
+        plt.subplot(2, 3, 4)
+        plt.title('Top Down 2D Prediction')
         plt.scatter(0,0, c='k')
         ax = plt.gcf().gca()
         areas = np.empty(len(obj_list))
@@ -134,15 +135,31 @@ class Segmentation_Collision_Avoidance:
                     show_fit_circle = plt.Circle((c[0], c[1]), c[2], color=color, fill=False)
                     ax.add_patch(show_fit_circle)
         plt.axis('equal')
-        plt.subplot(2, 2, 2)
-        frame = self.window.current_frame
+        plt.subplot(2, 3, 2)
+        plt.title('Depth mask of objects')
         nan_depthImg = np.zeros(frame.depthImg.shape)
         nan_depthImg = np.where(frame.low_confidence, np.nan, frame.depthImg)
         plt.imshow(nan_depthImg)
         for obj in self.window.objects_in_scope:
             mask = np.where(obj.segMask,0,np.nan)
             plt.imshow(mask)
-        plt.subplot(2, 2, 4)
+        plt.subplot(2, 3, 5)
+        plt.title('Object history')
+        plt.scatter(0,0,c='k')
+        ax = plt.gcf().gca()
+        for pred in self.window.predictions.values():
+            plt.scatter(pred.circles[:,0], pred.circles[:,1], c=plt_colors[pred.id % len(plt_colors)])
+            plt.plot(pred.circles[:,0], pred.circles[:,1], c=plt_colors[pred.id % len(plt_colors)])
+        plt.axis('equal')
+        plt.subplot(2, 3, 3)
+        plt.title('Ground')
+        plt.imshow(self.window.current_frame.rgbImg)
+        nan_depthImg = np.zeros(frame.depthImg.shape)
+        nan_depthImg = np.where(frame.ground, frame.depthImg, np.nan)
+        plt.imshow(nan_depthImg)
+        plt.xlim(0,self.window.current_frame.rgbImg.shape[1])
+        plt.subplot(2, 3, 6)
+        plt.title('Best fit of objects')
         plt.scatter(0,0,c='k')
         ax = plt.gcf().gca()
         plt.axis('equal')
@@ -564,8 +581,8 @@ class Prediction:
             self.lifetime = timer()
         self.files_mode = files_mode
         self.id = object.id
-        self.circles = np.empty((2,3))
-        self.circles[0,:] = object.circle
+        # self.circles = np.empty((2,3))
+        self.circles = np.copy(object.circle).reshape(1,3)
         self.samples = 1
         self.total_radius = object.circle[2]
         self.future = None
@@ -577,17 +594,18 @@ class Prediction:
         else:
             time_delta = timer() - self.lifetime
             self.lifetime = timer()
-        self.circles[1,:] = self.circles[0,:]
-        self.circles[0,:] = object.circle
+        # self.circles[1,:] = self.circles[0,:]
+        # self.circles[0,:] = object.circle
+        self.circles = np.append(self.circles, object.circle.reshape(1,3), axis=0)
         self.samples += 1
         self.total_radius += object.circle[2]
         future_samples = Config.get("seconds_into_future") * Config.get("samples_per_second")
         self.future = np.empty((future_samples + 1, 3))
         self.future[0,:] = object.circle
         self.future[:,2] = self.total_radius / self.samples
-        velocity = (self.circles[0,0:2] - self.circles[1,0:2]) / time_delta
+        self.velocity = (self.circles[-1,0:2] - self.circles[-2,0:2]) / time_delta
         for i in range(future_samples):
-            self.future[i + 1,0:2] = self.future[i,0:2] + velocity
+            self.future[i + 1,0:2] = self.future[i,0:2] + self.velocity
 
     def past_lifetime(self):
         if self.files_mode:
