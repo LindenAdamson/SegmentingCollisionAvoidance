@@ -1,5 +1,8 @@
 # Segmenting Collision Avoidance
 _Linden Adamson_
+
+![Alt Text](https://github.com/LindenAdamson/SegmentingCollisionAvoidance/blob/main/scripts/gifs/cd_rt.gif)
+
 ## Overview
 Segmenting Collision Avoidance is a work-in-progress algorithm for self driving vehicles. It is designed to process RGB-D image data from a stereo camera and return safe trajectories for the ego vehicle to follow by predicting the movement of surrounding objects. It is meant to be paired with another autonomous vehicle model handling higher-level tasks such as following road laws and choosing when to turn, while SCA provides low-level driving adjustments and emergency braking to ensure safety.
 
@@ -10,12 +13,11 @@ Demoing the algorithm's current functionality can be done in [Colab](https://col
 ### Complete
 - Isolation of tracked objects' placement in 3D space from background, other noise
 - Predict tracked objects' future movements
-- Determine safe trajectories for the ego vehicle
 ### In Progress
-- Tracking of objects between frames
-- Optimization for real-time use case feasibility
+- Prediction improvements
+- Determine safe trajectories for the ego vehicle
 ### To Come
-- Utilization of GPU for time consuming, parallelizable processes
+- Utilization of GPU for real-time use case feasibility
 ### In Consideration
 - Support for depth information in point cloud format, eg from a LiDAR device 
 ## About Bike for the Blind
