@@ -4,6 +4,7 @@ import matplotlib.colors as mcolors
 import math
 import cv2
 import yaml
+import numba_functs
 from ultralytics import FastSAM
 from timeit import default_timer as timer
 from PIL import Image
@@ -20,6 +21,7 @@ def timeit(func):
 class Segmentation_Collision_Avoidance:
     def __init__(self, config):
         Config.load(config)
+        numba_functs.compile_numba_functs()
         self.window = Window()
     
     def plot(self):
@@ -105,33 +107,34 @@ class Segmentation_Collision_Avoidance:
         self.resize_images(rgbImg, depthImg)
     
     def add_demo_image_file(self, imgName):
-        Debug_Timer.start("open_img")
+        # Debug_Timer.start("open_img")
         rgbImg = Image.open("/content/SegmentingCollisionAvoidance/oakd_data/test/rgb" + imgName + ".png")
         depthImg = np.asarray(Image.open("/content/SegmentingCollisionAvoidance/oakd_data/test/depth"\
             + imgName + ".png"))[:,:,0].astype(float)
         depthImg = -5.417 * depthImg / 100 + 9.125 # estimation
         depthImg = Image.fromarray(depthImg)
-        Debug_Timer.stop("open_img")
+        # Debug_Timer.stop("open_img")
         self.resize_images(rgbImg, depthImg)
     
     def add_CARLA_image_file(self, imgName):
-        Debug_Timer.start("open_img")
+        # Debug_Timer.start("open_img")
         rgbImg = Image.open("../data/rgb" + imgName + ".jpeg")
         depthImg = Image.fromarray(np.loadtxt("../data/depth" + imgName + ".out", delimiter=","))
-        Debug_Timer.stop("open_img")
+        # Debug_Timer.stop("open_img")
         self.resize_images(rgbImg, depthImg)
         
     def add_OAKD_image_file(self, imgName):
-        Debug_Timer.start("open_img")
+        # Debug_Timer.start("open_img")
         rgbImg = Image.open("../oakd_data/test/rgb" + imgName + ".png")
         depthImg = np.asarray(Image.open("../oakd_data/test/depth" + imgName + ".png"))[:,:,0].astype(float)
         depthImg = -5.417 * depthImg / 100 + 9.125 # estimation
         depthImg = Image.fromarray(depthImg)
-        Debug_Timer.stop("open_img")
+        # Debug_Timer.stop("open_img")
         self.resize_images(rgbImg, depthImg)
 
     @timeit
     def resize_images(self, rgbImg, depthImg): # to common FOV
+        # Debug_Timer.start("actual_resizing")
         rgbImg = np.asarray(rgbImg)
         depthImg = np.asarray(depthImg)
         rgb_shape_h, rgb_shape_v = rgbImg.shape[0:2]
@@ -153,6 +156,7 @@ class Segmentation_Collision_Avoidance:
         h, v = Config.get("dimensions")
         rgbImg = np.asarray(Image.fromarray(rgbImg).resize((v, h)))
         depthImg = np.asarray(Image.fromarray(depthImg).resize((v, h)))
+        # Debug_Timer.stop("actual_resizing")
         self.window.receive_img(rgbImg, depthImg)
 
     def get_velocities(self):
@@ -169,7 +173,10 @@ class Window:
         Debug_Timer.start("fastSAM")
         results = self.model.track(rgbImg, persist=True, verbose=False)[0]
         Debug_Timer.stop("fastSAM")
+        Debug_Timer.start("frame init")
         self.frame = Frame(rgbImg, depthImg, results)
+        Debug_Timer.stop("frame init")
+        # Debug_Timer.start("objs and preds")
         self.objects_in_scope = []
         ids_list = []
         for obj in self.frame.objects:
@@ -186,8 +193,9 @@ class Window:
         for pred in list(self.predictions.values()):
             if pred.id not in ids_list:
                 del self.predictions[pred.id]
+        # Debug_Timer.stop("objs and preds")
 
-    @timeit
+    # @timeit
     def get_velocities(self):
         max_angle = Config.get("max_steering_angle")
         angle_samples = Config.get("angle_samples")
@@ -313,6 +321,7 @@ class Frame:
         self.filter_objects()
         self.consolidate_objects()
 
+    # @timeit
     def populate_objects(self):
         objects = []
         ids = np.array(self.results.boxes.id.int().cpu().tolist())
@@ -335,6 +344,7 @@ class Frame:
         self.sky = np.where(rgb_sum > bright_cutoff, 1, 0)
         self.ground = self.find_ground()
         self.low_confidence = np.where(self.depthImg > Config.get("magic_trust_number"), 1, 0)
+        # Debug_Timer.start("actually filter")
         for obj in self.objects:
             if obj.segMask is None:
                 obj.set_out_of_scope()
@@ -349,8 +359,9 @@ class Frame:
                 np.logical_not(self.ground) & np.logical_not(self.low_confidence)
             if float(np.sum(obj.segMask)) / float(img_size) < Config.get("min_object_area"):
                 obj.set_out_of_scope()
+        # Debug_Timer.stop("actually filter")
 
-    @timeit
+    # @timeit
     def consolidate_objects(self):
         obj_list = []
         for obj in self.objects:
@@ -380,7 +391,7 @@ class Frame:
                     obj.set_out_of_scope()
             grid[np.logical_and(grid == -1, obj.segMask)] = i
 
-    @timeit
+    # @timeit
     def make_cartesian(self):
         rows = self.depthImg.shape[0]
         cols = self.depthImg.shape[1]
@@ -389,7 +400,17 @@ class Frame:
         vert_fov = min(Config.get("color_fov")[1], Config.get("depth_fov")[1]) * math.pi / 180
         lr = np.sin(np.linspace(-horiz_fov / 2, horiz_fov / 2, cols))
         ud = np.sin(np.linspace(-vert_fov / 2, vert_fov / 2, rows))
-        # self.make_cartesian_njit_helper(lr, ud, self.depthImg, cartImg)
+        numba_functs.make_cartesian_njit_helper(rows, cols, lr, ud, self.depthImg, cartImg)
+        return cartImg
+    
+    # @timeit
+    def make_cartesian_no_gpu(self):
+        rows, cols = Config.get("dimensions")
+        cartImg = np.empty([rows, cols, 3]) # x = left/right, y = up/down, z = in/out
+        horiz_fov = min(Config.get("color_fov")[0], Config.get("depth_fov")[0]) * math.pi / 180
+        vert_fov = min(Config.get("color_fov")[1], Config.get("depth_fov")[1]) * math.pi / 180
+        lr = np.sin(np.linspace(-horiz_fov / 2, horiz_fov / 2, cols))
+        ud = np.sin(np.linspace(-vert_fov / 2, vert_fov / 2, rows))
         for i in range(rows):
             for j in range(cols):
                 rho = self.depthImg[i,j]
@@ -399,8 +420,17 @@ class Frame:
                 cartImg[i,j,:] = [x, -y, z]
         return cartImg
     
-    @timeit
+    # @timeit
     def find_ground(self):
+        rows, cols = Config.get("dimensions")
+        ground = np.zeros((rows, cols), dtype=bool)
+        outline_matrix = np.asarray([self.cartImg[:,:,2], self.cartImg[:,:,1], np.zeros((rows, cols)) - 1]).T[:,::-1,:]
+        buckets_matrix = np.zeros((cols, rows, 3)) # [x, y, total]
+        numba_functs.find_ground_njit_helper(rows, cols, ground, outline_matrix, buckets_matrix)
+        return ground
+    
+    @timeit
+    def find_ground_no_gpu(self):
         ground = np.zeros(self.depthImg.shape, dtype=bool)
         for column in range(self.depthImg.shape[1]):
             length = self.depthImg[:,0].shape[0]
@@ -456,7 +486,7 @@ class Frame:
             ground[length - idx:,column] = True
         return ground
     
-    @timeit
+    # @timeit
     def fit_circle(self, obj):
         mask = obj.segMask
         top_down = np.array([self.cartImg[mask,0].flatten(), self.cartImg[mask,2].flatten()]).T
