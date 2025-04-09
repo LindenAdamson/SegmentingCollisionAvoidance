@@ -4,9 +4,7 @@ import matplotlib.colors as mcolors
 import math
 import cv2
 import yaml
-from ultralytics import FastSAM, SAM
-from shapely.geometry import Polygon
-from numba import njit, prange
+from ultralytics import FastSAM
 from timeit import default_timer as timer
 from PIL import Image
 from scipy import stats
@@ -23,119 +21,41 @@ class Segmentation_Collision_Avoidance:
     def __init__(self, config):
         Config.load(config)
         self.window = Window()
-
-    def plot(self):
-        plt_colors = list(mcolors.TABLEAU_COLORS.values())
-        fig = plt.figure()
-        plt.subplot(2, 2, 1)
-        plt.title('Tracked Objects')
-        plt.imshow(self.window.current_frame.rgbImg)
-        # colors = {}
-        obj_list = list(self.window.objects_in_scope)
-        for obj in obj_list:
-            outline = np.concatenate((obj.outline, [obj.outline[0,:]]))
-            # colors[obj.id] = plt.plot(outline[:,0],outline[:,1])[-1].get_color()
-            plt.plot(outline[:,0],outline[:,1],color=plt_colors[obj.id % len(plt_colors)])
-        plt.subplot(2, 2, 3)
-        plt.title('Top Down 2D Prediction')
-        plt.scatter(0,0, c='k')
-        ax = plt.gcf().gca()
-        areas = np.empty(len(obj_list))
-        for i in range(len(obj_list)):
-            areas[i] = obj_list[i].circle[2]
-        argsort = areas.argsort()
-        for i in range(len(obj_list)):
-            obj = obj_list[argsort[len(obj_list) - i - 1]]
-            circle = obj.circle
-            # show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=colors[obj.id])
-            show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=plt_colors[obj.id % len(plt_colors)])
-            ax.add_patch(show_fit_circle)
-        for pred in self.window.predictions.values():
-            if pred.future is not None:
-                # if pred.id in colors:
-                #     color = colors[pred.id]
-                # else:
-                #     # color = 'grey'
-                #     continue
-                color=plt_colors[pred.id % len(plt_colors)]
-                num = 5
-                for i in range(num):
-                    # by = int(pred.future.shape[0] / num)
-                    c = pred.future[i,:]
-                    show_fit_circle = plt.Circle((c[0], c[1]), c[2], color=color, fill=False)
-                    ax.add_patch(show_fit_circle)
-        plt.axis('equal')
-        plt.subplot(1, 2, 2)
-        ax = plt.gcf().gca()
-        plt.xlabel("Steering Angle")
-        plt.ylabel("Permissable Velocity")
-        ax.yaxis.set_label_position("right")
-        plt.scatter(0,0, c='k')
-        grid = self.window.trajectory_grid
-        plt.plot(grid[-1,:,0], grid[-1,:,1], c='k', label='20 km/h')
-        plt.legend()
-        plt.plot(grid[:,0,0], grid[:,0,1], c='k')
-        plt.plot(grid[:,-1,0], grid[:,-1,1], c='k')
-        traj_bool = self.window.get_trajectories()
-        angle_samples = Config.get("angle_samples")
-        argsort = traj_bool.argsort()
-        for i_traj in range(angle_samples):
-            i_traj = argsort[-i_traj]
-            traj_val = traj_bool[i_traj]
-            if grid[traj_val,i_traj,1] > 10:
-                color = 'g'
-            elif grid[traj_val,i_traj,1] < 5:
-                color = 'r'
-            else:
-                color = 'orange'
-            plt.plot(grid[:traj_val,i_traj,0], grid[:traj_val,i_traj,1], c=color)
-        plt.axis('equal')
-        plt.tight_layout()
-        return fig
     
-    def plot2(self):
-        frame = self.window.current_frame
+    def plot(self):
+        frame = self.window.frame
         plt_colors = list(mcolors.TABLEAU_COLORS.values())
         fig = plt.figure()
-        plt.subplot(2, 3, 1)
+        plt.subplot(3, 3, 1)
         plt.title('Tracked Objects')
-        plt.imshow(self.window.current_frame.rgbImg)
-        # colors = {}
+        plt.imshow(self.window.frame.rgbImg)
         obj_list = list(self.window.objects_in_scope)
         for obj in obj_list:
             outline = np.concatenate((obj.outline, [obj.outline[0,:]]))
-            # colors[obj.id] = plt.plot(outline[:,0],outline[:,1])[-1].get_color()
-            plt.plot(outline[:,0],outline[:,1],color=plt_colors[obj.id % len(plt_colors)])
-        plt.subplot(2, 3, 4)
+            plt.plot(outline[:,0],outline[:,1],color=plt_colors[obj.id % plt_colors.__len__()])
+        plt.subplot(3, 3, 4)
         plt.title('Top Down 2D Prediction')
+        t = Config.get("seconds_into_future")
+        for pred in list(self.window.predictions.values()):
+            if pred.samples == 1:
+                continue
+            for two in range(2):
+                start = pred.starts[two]
+                line = pred.time_in[two](t)
+                hyp = math.sqrt((start[0] - line[0])**2 + (start[1] - line[1])**2)
+                longer_t = 2 * (pred.radius + Config.get("safe_distance")) * t/ hyp + t
+                line = pred.time_in[two](longer_t)
+                pred_line = np.array([start,line])
+                plt.scatter(pred.current_circle[0],pred.current_circle[1], color=plt_colors[pred.id % plt_colors.__len__()])
+                plt.plot(pred_line[:,0],pred_line[:,1], color=plt_colors[pred.id % plt_colors.__len__()])
         plt.scatter(0,0, c='k')
         ax = plt.gcf().gca()
-        areas = np.empty(len(obj_list))
-        for i in range(len(obj_list)):
-            areas[i] = obj_list[i].circle[2]
-        argsort = areas.argsort()
-        for i in range(len(obj_list)):
-            obj = obj_list[argsort[len(obj_list) - i - 1]]
-            circle = obj.circle
-            # show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=colors[obj.id])
-            show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], color=plt_colors[obj.id % len(plt_colors)])
-            ax.add_patch(show_fit_circle)
-        for pred in self.window.predictions.values():
-            if pred.future is not None:
-                # if pred.id in colors:
-                #     color = colors[pred.id]
-                # else:
-                #     # color = 'grey'
-                #     continue
-                color=plt_colors[pred.id % len(plt_colors)]
-                num = 5
-                for i in range(num):
-                    # by = int(pred.future.shape[0] / num)
-                    c = pred.future[i,:]
-                    show_fit_circle = plt.Circle((c[0], c[1]), c[2], color=color, fill=False)
-                    ax.add_patch(show_fit_circle)
-        plt.axis('equal')
-        plt.subplot(2, 3, 2)
+        width, height = ax.get_figure().get_size_inches()
+        xdim = 10
+        plt.xlim(-xdim,xdim)
+        ydim = xdim / height * width
+        plt.ylim(-5,2 * ydim - 5)
+        plt.subplot(3, 3, 2)
         plt.title('Depth mask of objects')
         nan_depthImg = np.zeros(frame.depthImg.shape)
         nan_depthImg = np.where(frame.low_confidence, np.nan, frame.depthImg)
@@ -143,22 +63,22 @@ class Segmentation_Collision_Avoidance:
         for obj in self.window.objects_in_scope:
             mask = np.where(obj.segMask,0,np.nan)
             plt.imshow(mask)
-        plt.subplot(2, 3, 5)
+        plt.subplot(3, 3, 5)
         plt.title('Object history')
         plt.scatter(0,0,c='k')
         ax = plt.gcf().gca()
         for pred in self.window.predictions.values():
-            plt.scatter(pred.circles[:,0], pred.circles[:,1], c=plt_colors[pred.id % len(plt_colors)])
-            plt.plot(pred.circles[:,0], pred.circles[:,1], c=plt_colors[pred.id % len(plt_colors)])
+            plt.scatter(pred.circles[:,0], pred.circles[:,1], c=plt_colors[pred.id % plt_colors.__len__()])
+            plt.plot(pred.circles[:,0], pred.circles[:,1], c=plt_colors[pred.id % plt_colors.__len__()])
         plt.axis('equal')
-        plt.subplot(2, 3, 3)
+        plt.subplot(3, 3, 3)
         plt.title('Ground')
-        plt.imshow(self.window.current_frame.rgbImg)
+        plt.imshow(self.window.frame.rgbImg)
         nan_depthImg = np.zeros(frame.depthImg.shape)
         nan_depthImg = np.where(frame.ground, frame.depthImg, np.nan)
         plt.imshow(nan_depthImg)
-        plt.xlim(0,self.window.current_frame.rgbImg.shape[1])
-        plt.subplot(2, 3, 6)
+        plt.xlim(0,self.window.frame.rgbImg.shape[1])
+        plt.subplot(3, 3, 6)
         plt.title('Best fit of objects')
         plt.scatter(0,0,c='k')
         ax = plt.gcf().gca()
@@ -166,11 +86,15 @@ class Segmentation_Collision_Avoidance:
         for obj in self.window.objects_in_scope:
             mask = obj.segMask
             top_down = np.array([frame.cartImg[mask,0].flatten(), frame.cartImg[mask,2].flatten()]).T
-            plt.scatter(top_down[:,0],top_down[:,1],s=1,c=plt_colors[obj.id % len(plt_colors)])
+            plt.scatter(top_down[:,0],top_down[:,1],s=1,c=plt_colors[obj.id % plt_colors.__len__()])
             circle = obj.circle
             show_fit_circle = plt.Circle((circle[0], circle[1]), circle[2], fill=False)
             ax.add_patch(show_fit_circle)
         plt.tight_layout()
+        plt.subplot(3, 1, 3)
+        plt.title('Permitted Velocity')
+        velocities = self.get_velocities()
+        plt.plot(velocities)
         return fig
     
     def add_image_file(self, rgb, depth):
@@ -183,13 +107,13 @@ class Segmentation_Collision_Avoidance:
     def add_demo_image_file(self, imgName):
         Debug_Timer.start("open_img")
         rgbImg = Image.open("/content/SegmentingCollisionAvoidance/oakd_data/test/rgb" + imgName + ".png")
-        depthImg = np.asarray(Image.open("/content/SegmentingCollisionAvoidance/oakd_data/test/depth" + imgName + ".png"))[:,:,0].astype(float)
+        depthImg = np.asarray(Image.open("/content/SegmentingCollisionAvoidance/oakd_data/test/depth"\
+            + imgName + ".png"))[:,:,0].astype(float)
         depthImg = -5.417 * depthImg / 100 + 9.125 # estimation
         depthImg = Image.fromarray(depthImg)
         Debug_Timer.stop("open_img")
         self.resize_images(rgbImg, depthImg)
     
-    @timeit
     def add_CARLA_image_file(self, imgName):
         Debug_Timer.start("open_img")
         rgbImg = Image.open("../data/rgb" + imgName + ".jpeg")
@@ -197,7 +121,6 @@ class Segmentation_Collision_Avoidance:
         Debug_Timer.stop("open_img")
         self.resize_images(rgbImg, depthImg)
         
-    @timeit
     def add_OAKD_image_file(self, imgName):
         Debug_Timer.start("open_img")
         rgbImg = Image.open("../oakd_data/test/rgb" + imgName + ".png")
@@ -207,6 +130,7 @@ class Segmentation_Collision_Avoidance:
         Debug_Timer.stop("open_img")
         self.resize_images(rgbImg, depthImg)
 
+    @timeit
     def resize_images(self, rgbImg, depthImg): # to common FOV
         rgbImg = np.asarray(rgbImg)
         depthImg = np.asarray(depthImg)
@@ -231,111 +155,152 @@ class Segmentation_Collision_Avoidance:
         depthImg = np.asarray(Image.fromarray(depthImg).resize((v, h)))
         self.window.receive_img(rgbImg, depthImg)
 
-    def get_trajectories(self):
-        return self.window.get_trajectories()
+    def get_velocities(self):
+        return self.window.get_velocities()
 
 class Window:
     def __init__(self):
         self.tracking_imgs = Config.get("tracking_imgs")
         self.model = FastSAM("FastSAM-s.pt")
-        # self.model = SAM("sam_b.pt")
         # self.model.to('cuda') 2080 has drivers that are too old lol
-        self.frames = []
         self.predictions = {}
-        self.trajectory_grid = self.make_trajectory_grid()
-
-    def make_trajectory_grid(self):
-        l = Config.get("length_front_to_back_wheels")
-        max_angle = Config.get("max_steering_angle")
-        distance = Config.get("distance_steering_prediction")
-        angle_samples = Config.get("angle_samples")
-        prediction_samples = Config.get("seconds_into_future") * Config.get("samples_per_second")
-        if prediction_samples % 2 == 0:
-            prediction_samples += 1
-        def A(x):
-            return (90 - x) * math.pi / 180
-        def U(x):
-            a = A(x)
-            return math.tan(a) * (math.sin(a) + l) + math.cos(a)
-        def w(a, t):
-            u = U(a)
-            return -u * math.cos(t / u) + u
-        def z(a, t):
-            u = U(a)
-            return u * math.sin(t / u)
-        trajectory_grid = np.zeros([prediction_samples + 1, angle_samples, 2])
-        angle_steps = np.linspace(-max_angle / 2, max_angle / 2, angle_samples)
-        time_steps = np.linspace(0, distance, prediction_samples + 1)
-        for a in range(angle_steps.size):
-            for t in range(time_steps.size):
-                a_s = angle_steps[a]
-                t_s = time_steps[t]
-                trajectory_grid[t,a,0] = w(a_s,t_s)
-                trajectory_grid[t,a,1] = z(a_s,t_s)
-        return trajectory_grid
 
     def receive_img(self, rgbImg, depthImg):
         Debug_Timer.start("fastSAM")
         results = self.model.track(rgbImg, persist=True, verbose=False)[0]
         Debug_Timer.stop("fastSAM")
-        self.current_frame = Frame(rgbImg, depthImg, results)
-        if len(self.frames) == self.tracking_imgs:
-            self.frames.pop(0)
-        self.frames.append(self.current_frame)
-        # if len(self.frames) == self.tracking_imgs:
-        #     self.objects_in_scope = self.get_objects_in_scope()
-        #     for obj in self.objects_in_scope:
-        #         self.current_frame.fit_circle(obj)
-        # else:
-        #     self.objects_in_scope = []
+        self.frame = Frame(rgbImg, depthImg, results)
         self.objects_in_scope = []
-        for object in self.current_frame.objects:
-            if object.in_scope:
-                self.objects_in_scope.append(object)
-                self.current_frame.fit_circle(object)
+        ids_list = []
+        for obj in self.frame.objects:
+            if obj.in_scope:
+                self.objects_in_scope.append(obj)
+                self.frame.fit_circle(obj)
+                ids_list.append(obj.id)
         for obj in self.objects_in_scope:
             if obj.id in self.predictions:
-                self.predictions[obj.id].add_circle(obj)
+                self.predictions[obj.id].add_circle(obj, Config.get("file_mode_image_speed")) # change for ros!
             else:
-                pred = Prediction(obj, True)
+                pred = Prediction(obj)
                 self.predictions[obj.id] = pred
         for pred in list(self.predictions.values()):
-            if pred.past_lifetime() > Config.get("out_of_sight_lifetime"):
+            if pred.id not in ids_list:
                 del self.predictions[pred.id]
 
-    def get_objects_in_scope(self):
-        objects_in_scope = []
-        d = {}
-        for frame in self.frames:
-            for object in frame.objects:
-                if object.in_scope:
-                    if object.id in d:
-                        d[object.id] += 1
-                    else:
-                        d[object.id] = 1
-        for object in self.current_frame.objects:
-            if object.id in d:
-                if d[object.id] == self.tracking_imgs:
-                    objects_in_scope.append(object)
-        return objects_in_scope
-
     @timeit
-    def get_trajectories(self):
+    def get_velocities(self):
+        max_angle = Config.get("max_steering_angle")
         angle_samples = Config.get("angle_samples")
-        future_samples = Config.get("seconds_into_future") * Config.get("samples_per_second")
-        traj_bool = np.zeros(angle_samples, dtype=int) + future_samples + 1
-        for i_traj in range(angle_samples):
-            traj = self.trajectory_grid[:,i_traj,:]
-            for pred in self.predictions.values():
-                if pred.future is not None:
-                    for i_time in range(future_samples):
-                        circle = pred.future[i_time,:]
-                        point = traj[i_time,:]
-                        distance = np.sum(np.square(circle[0:2] - point))
-                        if distance < (circle[2] + Config.get("safe_distance")) ** 2:
-                            traj_bool[i_traj] = min(i_time, traj_bool[i_traj])
-                            break
-        return traj_bool
+        l = Config.get("length_front_to_back_wheels")
+        t = Config.get("seconds_into_future")
+        safe_distance = Config.get("safe_distance")
+        def A(x):
+            return (90 - x) * math.pi / 180
+        def U(x):
+            a = A(x)
+            return math.tan(a) * (math.sin(a) + l) + math.cos(a)
+        angle_steps = np.linspace(-max_angle / 2, max_angle / 2, angle_samples)
+        velocities = np.zeros(angle_samples) + 20
+        for pred in list(self.predictions.values()):
+            if pred.samples == 1:
+                continue
+            for two in range(2):
+                start = pred.starts[two]
+                line = pred.time_in[two](t)
+                hyp = math.sqrt((start[0] - line[0])**2 + (start[1] - line[1])**2)
+                longer_t = 2 * (pred.radius + safe_distance) * t/ hyp + t
+                line = pred.time_in[two](longer_t)
+                pred_line = np.array([start,line])
+                for i, a in enumerate(angle_steps):
+                    if a == 0:
+                        y = self.y_intercept(pred_line)
+                        time = pred.time_out[two]([0,y])
+                        if time > 0 and y > 0:
+                            velocities[i] = min(y / time, velocities[i])
+                    else:
+                        val = U(a)
+                        track = np.array([val,0,abs(val)])
+                        num_p, inter = self.intersect(track, pred_line)
+                        if num_p == 0:
+                            continue
+                        elif num_p == 1:
+                            arc = self.arc_length(track,inter)
+                            pt = inter[0,:]
+                        else:
+                            arc1 = self.arc_length(track,inter[0,:])
+                            arc2 = self.arc_length(track,inter[1,:])
+                            if arc1 < arc2:
+                                arc = arc1
+                                pt = inter[0,:]
+                            else:
+                                arc = arc2
+                                pt = inter[1,:]
+                        time = pred.time_out[two](pt)
+                        # time = min(pred.time_out[two](pt), t)
+                        if time > 0:
+                            velocities[i] = min(arc / time, velocities[i])
+        return velocities
+    
+    def intersect(self, circle, segment):
+        out = np.empty((2,2))
+        dist1 = (circle[0] - segment[0,0])**2 + (circle[1] - segment[0,1])**2
+        dist2 = (circle[0] - segment[1,0])**2 + (circle[1] - segment[1,1])**2
+        if min(dist1, dist2) > circle[2]**2:
+            return [0, out]
+        l = np.copy(segment)
+        l -= circle[0:2]
+        r = circle[2]
+        x1, y1, x2, y2 = l.flatten()
+        dx = x2 - x1
+        dy = y2 - y1
+        dr = dx**2 + dy**2
+        det = x1 * y2 - x2 * y1
+        disc = r**2 * dr - det**2
+        if disc < 0:
+            return [0, out]
+        elif disc == 0:
+            out[0,:] = [det * dy, -det * dx]
+            return [1, out]
+        else:
+            xpm = np.sign(dy) * dx * math.sqrt(disc)
+            ypm = abs(dy) * math.sqrt(disc)
+            out[0,:] = [det * dy + xpm, -det * dx + ypm]
+            out[1,:] = [det * dy - xpm, -det * dx - ypm]
+            out /= dr
+            return [2, out + circle[0:2]]
+        
+    def arc_length(self, circle, point):
+        rad = -np.atan((point[1] - circle[1]) / (point[0] - circle[0]))
+        xdel = point[0] - circle[0] >= 0
+        ydel = point[1] - circle[1] >= 0
+        if circle[0] > 0:
+            if xdel and ydel: # quad 2
+                rad += math.pi
+            elif xdel and not ydel: # quad 3
+                rad += math.pi
+            elif not xdel and ydel: # quad 1
+                pass
+            else: # quad 4 # not xdel and not ydel
+                rad += math.pi * 2
+        else:
+            if xdel and ydel: # quad 2
+                rad = -rad
+            elif xdel and not ydel: # quad 3
+                rad = math.pi * 2 - rad
+            elif not xdel and ydel: # quad 1
+                rad = math.pi - rad
+            else: # quad 4 # not xdel and not ydel
+                rad = math.pi -rad
+        return rad * circle[2]
+
+    def y_intercept(self, line):
+        m = (line[0,1] - line[1,1]) / (line[0,0] - line[1,0])
+        return line[0,1] - m * line[0,0]
+
+    def x_intercept(self, line):
+        m = (line[0,1] - line[1,1]) / (line[0,0] - line[1,0])
+        b = line[0,1] - m * line[0,0]
+        return -b / m
 
 class Frame:
     def __init__(self, rgbImg, depthImg, results):
@@ -382,7 +347,7 @@ class Frame:
                 continue
             obj.segMask = obj.segMask & np.logical_not(self.sky) &\
                 np.logical_not(self.ground) & np.logical_not(self.low_confidence)
-            if float(np.sum(obj.segMask)) / float(img_size) < .002: #Config.get("min_object_area"):
+            if float(np.sum(obj.segMask)) / float(img_size) < Config.get("min_object_area"):
                 obj.set_out_of_scope()
 
     @timeit
@@ -391,7 +356,7 @@ class Frame:
         for obj in self.objects:
             if obj.in_scope:
                 obj_list.append(obj)
-        num_obj = len(obj_list)
+        num_obj = obj_list.__len__()
         areas = np.empty(num_obj)
         for i in range(num_obj):
             obj = obj_list[i]
@@ -538,6 +503,10 @@ class Frame:
         ends[1,1] = res.intercept + res.slope * to_fit[-1,0]
         midpoint = np.sum(ends, axis=0) / 2
         radius = math.sqrt((ends[0,0] - ends[1,0]) ** 2 + (ends[0,1] - ends[1,1]) ** 2) / 2
+        min_rotated = np.min(rotated[:,1])
+        max_radius = abs(math.sin(left_most_angle - angle_from_straight)\
+            - math.sin(right_most_angle - angle_from_straight)) * min_rotated
+        radius = min(radius, max_radius)
         s = radius * math.pi / 4
         theta = math.atan(-1 / res.slope)
         x = s * math.cos(theta)
@@ -565,55 +534,55 @@ class Object:
             self.set_out_of_scope()
             return
         segMask = np.zeros(Config.get("dimensions"))
-        polygon = Polygon(outline)
-        points = np.array([[[x, y] for x, y in zip(*polygon.boundary.coords.xy)]]).astype(int)
-        segMask = cv2.fillPoly(segMask, points, color=1).astype(bool)
+        segMask = cv2.fillPoly(segMask, [outline.astype(int)], color=1).astype(bool)
         return segMask
 
     def set_out_of_scope(self):
         self.in_scope = False
 
 class Prediction:
-    def __init__(self, object, files_mode=False):
-        if files_mode:
-            self.lifetime = 0
-        else:
-            self.lifetime = timer()
-        self.files_mode = files_mode
+    def __init__(self, object):
         self.id = object.id
-        # self.circles = np.empty((2,3))
-        self.circles = np.copy(object.circle).reshape(1,3)
+        self.circles = np.copy(object.circle)[0:2].reshape(1,2)
+        self.current_circle = self.circles[-1,:]
         self.samples = 1
         self.total_radius = object.circle[2]
-        self.future = None
+        self.time_in = None
+        self.time_out = None
+        self.velocity_list = []
+        self.radius = None
+        self.starts = None
 
-    def add_circle(self, object):
-        if self.files_mode:
-            time_delta = Config.get("file_mode_image_speed")
-            self.lifetime = 0
-        else:
-            time_delta = timer() - self.lifetime
-            self.lifetime = timer()
-        # self.circles[1,:] = self.circles[0,:]
-        # self.circles[0,:] = object.circle
-        self.circles = np.append(self.circles, object.circle.reshape(1,3), axis=0)
-        self.samples += 1
+    def add_circle(self, object, time_delta):
+        measurement_trust = Config.get("measurement_trust")
+        actual = object.circle[0:2].reshape(1,2)
         self.total_radius += object.circle[2]
-        future_samples = Config.get("seconds_into_future") * Config.get("samples_per_second")
-        self.future = np.empty((future_samples + 1, 3))
-        self.future[0,:] = object.circle
-        self.future[:,2] = self.total_radius / self.samples
-        self.velocity = (self.circles[-1,0:2] - self.circles[-2,0:2]) / time_delta
-        for i in range(future_samples):
-            self.future[i + 1,0:2] = self.future[i,0:2] + self.velocity
-
-    def past_lifetime(self):
-        if self.files_mode:
-            # self.lifetime += Config.get("file_mode_image_speed")
-            self.lifetime += Config.get("out_of_sight_lifetime") * .6
-            return self.lifetime
+        if self.samples == 1:
+            self.circles = np.append(self.circles, actual, axis=0)
         else:
-            return timer() - self.lifetime
+            predicted = self.for_compromise(time_delta).reshape(1,2)
+            compromise = actual * measurement_trust + predicted * (1 - measurement_trust)
+            self.circles = np.append(self.circles, compromise, axis=0)
+        self.current_circle = self.circles[-1,:]
+        self.samples += 1
+        self.radius = self.total_radius / self.samples
+        velocity = (self.current_circle - self.circles[-2,:]) / time_delta
+        hyp = math.sqrt(velocity[0]**2 + velocity[1]**2)
+        addition = velocity * (self.radius + Config.get("safe_distance")) / hyp
+        start = self.current_circle + [-addition[0], -addition[1]]
+        start0 = np.copy(start + [addition[1], -addition[0]])
+        start1 = np.copy(start + [-addition[1], addition[0]])
+        self.starts = [start0, start1]
+        self.for_compromise = self.lambda_time_in(velocity, self.current_circle)
+        self.time_in = [self.lambda_time_in(velocity, start0), self.lambda_time_in(velocity, start1)]
+        self.time_out = [self.lambda_time_out(velocity, start0), self.lambda_time_out(velocity, start1)]
+        self.velocity_list.append(np.sqrt(np.sum(velocity ** 2)))
+    
+    def lambda_time_in(self, velocity, start):
+        return lambda t : t * velocity + start
+    
+    def lambda_time_out(self, velocity, start):
+        return lambda t : ((t - start) / velocity)[0]
 
 class Debug_Timer:
     start_time = {}
@@ -650,7 +619,7 @@ class Debug_Timer:
             totals = np.array(list(cls.total.values()))
             argsort = totals.argsort()[::-1]
             keys = list(cls.total.keys())
-            for i in range(len(cls.total)):
+            for i in range(cls.total.__len__()):
                 key = keys[argsort[i]]
                 print(key + ":")
                 print("\ttotal = " + str(cls.total[key])\
