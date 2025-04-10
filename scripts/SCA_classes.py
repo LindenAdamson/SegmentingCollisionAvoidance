@@ -5,10 +5,13 @@ import math
 import cv2
 import yaml
 import numba_functs
+import numba as nb
+import numba.types as nbt
 from ultralytics import FastSAM
 from timeit import default_timer as timer
 from PIL import Image
 from scipy import stats
+from shapely import Polygon, Point
 
 def timeit(func):
     def wrapper(*args, **kwargs):
@@ -36,7 +39,7 @@ class Segmentation_Collision_Avoidance:
             outline = np.concatenate((obj.outline, [obj.outline[0,:]]))
             plt.plot(outline[:,0],outline[:,1],color=plt_colors[obj.id % plt_colors.__len__()])
         plt.subplot(3, 3, 4)
-        plt.title('Top Down 2D Prediction')
+        plt.title('Top-Down Prediction')
         t = Config.get("seconds_into_future")
         for pred in list(self.window.predictions.values()):
             if pred.samples == 1:
@@ -57,8 +60,8 @@ class Segmentation_Collision_Avoidance:
         plt.xlim(-xdim,xdim)
         ydim = xdim / height * width
         plt.ylim(-5,2 * ydim - 5)
-        plt.subplot(3, 3, 2)
-        plt.title('Depth mask of objects')
+        plt.subplot(3, 3, 3)
+        plt.title('Depth Masks of Objects')
         nan_depthImg = np.zeros(frame.depthImg.shape)
         nan_depthImg = np.where(frame.low_confidence, np.nan, frame.depthImg)
         plt.imshow(nan_depthImg)
@@ -66,22 +69,22 @@ class Segmentation_Collision_Avoidance:
             mask = np.where(obj.segMask,0,np.nan)
             plt.imshow(mask)
         plt.subplot(3, 3, 5)
-        plt.title('Object history')
+        plt.title('Object Histories')
         plt.scatter(0,0,c='k')
         ax = plt.gcf().gca()
         for pred in self.window.predictions.values():
             plt.scatter(pred.circles[:,0], pred.circles[:,1], c=plt_colors[pred.id % plt_colors.__len__()])
             plt.plot(pred.circles[:,0], pred.circles[:,1], c=plt_colors[pred.id % plt_colors.__len__()])
         plt.axis('equal')
-        plt.subplot(3, 3, 3)
-        plt.title('Ground')
+        plt.subplot(3, 3, 2)
+        plt.title('Sky and Ground')
         plt.imshow(self.window.frame.rgbImg)
         nan_depthImg = np.zeros(frame.depthImg.shape)
         nan_depthImg = np.where(frame.ground, frame.depthImg, np.nan)
         plt.imshow(nan_depthImg)
         plt.xlim(0,self.window.frame.rgbImg.shape[1])
         plt.subplot(3, 3, 6)
-        plt.title('Best fit of objects')
+        plt.title('Circles of Best Fit')
         plt.scatter(0,0,c='k')
         ax = plt.gcf().gca()
         plt.axis('equal')
@@ -95,8 +98,14 @@ class Segmentation_Collision_Avoidance:
         plt.tight_layout()
         plt.subplot(3, 1, 3)
         plt.title('Permitted Velocity')
-        velocities = self.get_velocities()
-        plt.plot(velocities)
+        max_angle = Config.get("max_steering_angle")
+        angle_samples = Config.get("angle_samples")
+        angle_steps = np.linspace(-max_angle, max_angle, angle_samples)
+        velocities, avoidance, collision = self.window.get_velocities()
+        if collision:
+            plt.plot(angle_steps, avoidance, c='r')
+        else:
+            plt.plot(angle_steps, velocities, c='b')
         return fig
     
     def add_image_file(self, rgb, depth):
@@ -132,9 +141,9 @@ class Segmentation_Collision_Avoidance:
         # Debug_Timer.stop("open_img")
         self.resize_images(rgbImg, depthImg)
 
-    @timeit
+    # @timeit
     def resize_images(self, rgbImg, depthImg): # to common FOV
-        # Debug_Timer.start("actual_resizing")
+        Debug_Timer.start("image resizing")
         rgbImg = np.asarray(rgbImg)
         depthImg = np.asarray(depthImg)
         rgb_shape_h, rgb_shape_v = rgbImg.shape[0:2]
@@ -156,11 +165,28 @@ class Segmentation_Collision_Avoidance:
         h, v = Config.get("dimensions")
         rgbImg = np.asarray(Image.fromarray(rgbImg).resize((v, h)))
         depthImg = np.asarray(Image.fromarray(depthImg).resize((v, h)))
-        # Debug_Timer.stop("actual_resizing")
+        Debug_Timer.stop("image resizing")
         self.window.receive_img(rgbImg, depthImg)
 
-    def get_velocities(self):
-        return self.window.get_velocities()
+    # def get_velocities(self):
+    #     return self.window.get_velocities()
+
+    def get_steering_angle(self, preferred_angle, bang_bang):
+        velocities, avoidance, collision = self.window.get_velocities()
+        if bang_bang: # angles in and out in [-1, 0, 1]: [left, center, right]
+            steering = Config.get("bang_bang_steering")
+            if collision:
+                idx = avoidance.argsort()[-1]
+                if idx < avoidance.__len__() - 1:
+                    return steering[0]
+                return steering[2]
+            else: # for now, do nothing
+                return preferred_angle
+        else: # angles in and out in [0...1]: [left...right]
+            if collision:
+                return float(avoidance.argsort()[-1]) / (avoidance.__len__() - 1)
+            else: # for now, do nothing
+                return preferred_angle
 
 class Window:
     def __init__(self):
@@ -197,6 +223,7 @@ class Window:
 
     # @timeit
     def get_velocities(self):
+        brake = False
         max_angle = Config.get("max_steering_angle")
         angle_samples = Config.get("angle_samples")
         l = Config.get("length_front_to_back_wheels")
@@ -207,47 +234,64 @@ class Window:
         def U(x):
             a = A(x)
             return math.tan(a) * (math.sin(a) + l) + math.cos(a)
-        angle_steps = np.linspace(-max_angle / 2, max_angle / 2, angle_samples)
-        velocities = np.zeros(angle_samples) + 20
+        angle_steps = np.linspace(-max_angle, max_angle, angle_samples)
+        collision = False
+        velocities = np.full(angle_samples, Config.get("max_considered_velocity"))
+        avoidance = np.zeros(angle_samples)
         for pred in list(self.predictions.values()):
-            if pred.samples == 1:
-                continue
-            for two in range(2):
-                start = pred.starts[two]
-                line = pred.time_in[two](t)
-                hyp = math.sqrt((start[0] - line[0])**2 + (start[1] - line[1])**2)
+            try:
+                obj_collision = False
+                if pred.samples == 1:
+                    continue
+                starts = np.array([pred.starts[0], pred.starts[1]])
+                ends = np.array([pred.time_in[0](t), pred.time_in[1](t)])
+                hyp = math.sqrt((starts[0,0] - ends[0,0])**2 + (starts[0,1] - ends[0,1])**2)
                 longer_t = 2 * (pred.radius + safe_distance) * t/ hyp + t
-                line = pred.time_in[two](longer_t)
-                pred_line = np.array([start,line])
-                for i, a in enumerate(angle_steps):
-                    if a == 0:
-                        y = self.y_intercept(pred_line)
-                        time = pred.time_out[two]([0,y])
-                        if time > 0 and y > 0:
-                            velocities[i] = min(y / time, velocities[i])
-                    else:
-                        val = U(a)
-                        track = np.array([val,0,abs(val)])
-                        num_p, inter = self.intersect(track, pred_line)
-                        if num_p == 0:
-                            continue
-                        elif num_p == 1:
-                            arc = self.arc_length(track,inter)
-                            pt = inter[0,:]
+                ends = np.array([pred.time_in[0](longer_t), pred.time_in[1](longer_t)])
+                coords = np.append(starts,ends[::-1,:],axis=0)
+                polygon = Polygon(coords)
+                point = Point(0, 0)
+                if polygon.contains(point):
+                    obj_collision = True
+                    collision = True
+                for two in range(2):
+                    pred_line = np.array([starts[two,:], ends[two,:]])
+                    for i, a in enumerate(angle_steps):
+                        if a == 0:
+                            y = self.y_intercept(pred_line)
+                            time = pred.time_out[two]([0,y])
+                            if time > 0 and y > 0:
+                                velocities[i] = min(y / time, velocities[i])
                         else:
-                            arc1 = self.arc_length(track,inter[0,:])
-                            arc2 = self.arc_length(track,inter[1,:])
-                            if arc1 < arc2:
-                                arc = arc1
+                            val = U(a)
+                            track = np.array([val,0,abs(val)])
+                            num_p, inter = self.intersect(track, pred_line)
+                            if num_p == 0:
+                                continue
+                            elif num_p == 1:
+                                arc = self.arc_length(track,inter)
                                 pt = inter[0,:]
                             else:
-                                arc = arc2
-                                pt = inter[1,:]
-                        time = pred.time_out[two](pt)
-                        # time = min(pred.time_out[two](pt), t)
-                        if time > 0:
-                            velocities[i] = min(arc / time, velocities[i])
-        return velocities
+                                arc1 = self.arc_length(track,inter[0,:])
+                                arc2 = self.arc_length(track,inter[1,:])
+                                if arc1 < arc2:
+                                    arc = arc1
+                                    pt = inter[0,:]
+                                else:
+                                    arc = arc2
+                                    pt = inter[1,:]
+                            time = pred.time_out[two](pt)
+                            # time = min(pred.time_out[two](pt), t)
+                            if time > 0:
+                                velocities[i] = min(arc / time, velocities[i])
+                        if obj_collision:
+                            if velocities[i] == 0:
+                                avoidance[i] = 1000000 # this should be big enough
+                            else:
+                                avoidance[i] = max(1.0 / velocities[i], avoidance[i])
+            except:
+                pass
+        return [velocities, avoidance, collision]
     
     def intersect(self, circle, segment):
         out = np.empty((2,2))
@@ -321,23 +365,46 @@ class Frame:
         self.filter_objects()
         self.consolidate_objects()
 
-    # @timeit
+    @timeit
     def populate_objects(self):
         objects = []
         ids = np.array(self.results.boxes.id.int().cpu().tolist())
-        boxes = self.results.boxes.xywh.cpu()
         outlines = self.results.masks.xy
-        for idx, (id, box, outline) in enumerate(zip(ids, boxes, outlines)):
-            obj = Object(id, box, outline)
+        dimensions = Config.get("dimensions")
+        for id, outline in zip(ids, outlines):
+            segMask = np.zeros(dimensions)
+            if outline.shape[0] >= 3:
+                segMask = cv2.fillPoly(segMask, [outline.astype(int)], color=1)
+            obj = Object(id, outline, segMask.astype(bool))
+            if outline.shape[0] < 3:
+                obj.set_out_of_scope()
             objects.append(obj)
         return objects
     
-    @timeit
+    # @timeit
+    # def filter_objects(self):
+    #     img_size = Config.get("dimensions")[0] * Config.get("dimensions")[1]
+    #     sky_bright_percent = Config.get("sky_brightness_percent")
+    #     max_percent_sky_overlap = Config.get("max_percent_sky_overlap")
+    #     max_percent_ground_overlap = Config.get("max_percent_ground_overlap")
+    #     min_object_area = Config.get("min_object_area")
+    #     rgb_sum = np.sum(self.rgbImg, axis=2)
+    #     max_bright = np.max(rgb_sum)
+    #     bright_cutoff = max_bright * (1 - sky_bright_percent)
+    #     self.sky = np.where(rgb_sum > bright_cutoff, 1, 0)
+    #     self.ground = self.find_ground()
+    #     self.low_confidence = np.where(self.depthImg > Config.get("magic_trust_number"), 1, 0)
+    #     # Debug_Timer.start("actually filter")
+    #     numba_functs.filter_objects_njit_helper(self.objects, self.objects.__len__(), self.sky, self.ground, self.low_confidence,\
+    #         img_size, max_percent_sky_overlap, max_percent_ground_overlap, min_object_area)
+    #     # Debug_Timer.stop("actually filter")
+
     def filter_objects(self):
         img_size = Config.get("dimensions")[0] * Config.get("dimensions")[1]
         sky_bright_percent = Config.get("sky_brightness_percent")
         max_percent_sky_overlap = Config.get("max_percent_sky_overlap")
         max_percent_ground_overlap = Config.get("max_percent_ground_overlap")
+        min_object_area = Config.get("min_object_area")
         rgb_sum = np.sum(self.rgbImg, axis=2)
         max_bright = np.max(rgb_sum)
         bright_cutoff = max_bright * (1 - sky_bright_percent)
@@ -346,18 +413,17 @@ class Frame:
         self.low_confidence = np.where(self.depthImg > Config.get("magic_trust_number"), 1, 0)
         # Debug_Timer.start("actually filter")
         for obj in self.objects:
-            if obj.segMask is None:
+            if not obj.in_scope:
+                continue
+            if np.sum(obj.segMask & self.sky) / obj.area() > max_percent_sky_overlap:
                 obj.set_out_of_scope()
                 continue
-            if np.sum(obj.segMask & self.sky) / obj.area > max_percent_sky_overlap:
-                obj.set_out_of_scope()
-                continue
-            if np.sum(obj.segMask & self.ground) / obj.area > max_percent_ground_overlap:
+            if np.sum(obj.segMask & self.ground) / obj.area() > max_percent_ground_overlap:
                 obj.set_out_of_scope()
                 continue
             obj.segMask = obj.segMask & np.logical_not(self.sky) &\
                 np.logical_not(self.ground) & np.logical_not(self.low_confidence)
-            if float(np.sum(obj.segMask)) / float(img_size) < Config.get("min_object_area"):
+            if float(obj.area()) / float(img_size) < min_object_area:
                 obj.set_out_of_scope()
         # Debug_Timer.stop("actually filter")
 
@@ -371,9 +437,9 @@ class Frame:
         areas = np.empty(num_obj)
         for i in range(num_obj):
             obj = obj_list[i]
-            areas[i] = np.sum(obj.segMask)
+            areas[i] = obj.area()
         argsort = areas.argsort()[::-1] # largest to smallest
-        grid = np.zeros(self.rgbImg.shape[0:2], dtype=int) - 1
+        grid = np.full(self.rgbImg.shape[0:2], -1, dtype=int)
         for i in range(num_obj):
             obj = obj_list[argsort[i]]
             d = []
@@ -385,7 +451,7 @@ class Frame:
                 if idx == -1:
                     continue
                 other_obj = obj_list[argsort[idx]]
-                if np.sum(np.logical_and(obj.segMask, other_obj.segMask)) / np.sum(obj.segMask)\
+                if np.sum(np.logical_and(obj.segMask, other_obj.segMask)) / obj.area()\
                     > Config.get("object_overlap_percent"):
                     other_obj.segMask = np.logical_or(obj.segMask, other_obj.segMask)
                     obj.set_out_of_scope()
@@ -424,7 +490,7 @@ class Frame:
     def find_ground(self):
         rows, cols = Config.get("dimensions")
         ground = np.zeros((rows, cols), dtype=bool)
-        outline_matrix = np.asarray([self.cartImg[:,:,2], self.cartImg[:,:,1], np.zeros((rows, cols)) - 1]).T[:,::-1,:]
+        outline_matrix = np.asarray([self.cartImg[:,:,2], self.cartImg[:,:,1], np.full((rows, cols), -1)]).T[:,::-1,:]
         buckets_matrix = np.zeros((cols, rows, 3)) # [x, y, total]
         numba_functs.find_ground_njit_helper(rows, cols, ground, outline_matrix, buckets_matrix)
         return ground
@@ -434,7 +500,7 @@ class Frame:
         ground = np.zeros(self.depthImg.shape, dtype=bool)
         for column in range(self.depthImg.shape[1]):
             length = self.depthImg[:,0].shape[0]
-            outline = np.asarray([self.cartImg[:,column,2], self.cartImg[:,column,1], np.zeros(length) - 1]).T[::-1,:]
+            outline = np.asarray([self.cartImg[:,column,2], self.cartImg[:,column,1], np.full(length, -1)]).T[::-1,:]
             start = np.where(np.min(outline[:,0]) == outline[:,0])[0][0]
             # Debug_Timer.start("put in buckets")
             lda = .25
@@ -549,26 +615,21 @@ class Frame:
         fit_circle[0:2] = np.matmul(fit_circle[0:2], rm)
         obj.circle = fit_circle
 
+# @nb.experimental.jitclass([('id', nbt.i8),('outline', nbt.f4[:, :]),\
+#     ('segMask', nbt.b1[:, :]), ('in_scope', nbt.b1), ('circle', nbt.f8[:])])
 class Object:
-    def __init__(self, id, box, outline):
+    def __init__(self, id, outline, segMask):
         self.id = id
-        self.box = box
-        self.in_scope = True
         self.outline = outline
-        self.segMask = self.get_seg_mask(outline)
-        self.area = np.sum(self.segMask)
-        self.circle = None
-
-    def get_seg_mask(self, outline):
-        if outline.shape[0] < 3:
-            self.set_out_of_scope()
-            return
-        segMask = np.zeros(Config.get("dimensions"))
-        segMask = cv2.fillPoly(segMask, [outline.astype(int)], color=1).astype(bool)
-        return segMask
+        self.segMask = segMask
+        self.in_scope = bool(True)
+        self.circle = np.array([0,0,0], dtype=np.float64)
 
     def set_out_of_scope(self):
-        self.in_scope = False
+        self.in_scope = bool(False)
+
+    def area(self):
+        return np.sum(self.segMask)
 
 class Prediction:
     def __init__(self, object):
@@ -579,7 +640,6 @@ class Prediction:
         self.total_radius = object.circle[2]
         self.time_in = None
         self.time_out = None
-        self.velocity_list = []
         self.radius = None
         self.starts = None
 
@@ -606,7 +666,6 @@ class Prediction:
         self.for_compromise = self.lambda_time_in(velocity, self.current_circle)
         self.time_in = [self.lambda_time_in(velocity, start0), self.lambda_time_in(velocity, start1)]
         self.time_out = [self.lambda_time_out(velocity, start0), self.lambda_time_out(velocity, start1)]
-        self.velocity_list.append(np.sqrt(np.sum(velocity ** 2)))
     
     def lambda_time_in(self, velocity, start):
         return lambda t : t * velocity + start

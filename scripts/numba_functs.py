@@ -82,3 +82,21 @@ def find_ground_njit_helper(rows, cols, ground, outline_matrix, buckets_matrix):
                 mini = dist
                 idx = i
         ground[rows - idx:,column] = True
+
+# @njit(parallel=True)
+# def filter_objects_njit_helper(objects, len, sky, ground, low_confidence,\
+#     img_size, max_percent_sky_overlap, max_percent_ground_overlap, min_object_area):
+#     for i in prange(len):
+#         obj = objects[i]
+#         if not obj.in_scope:
+#             continue
+#         if np.sum(obj.segMask & sky) / obj.area() > max_percent_sky_overlap:
+#             obj.set_out_of_scope()
+#             continue
+#         if np.sum(obj.segMask & ground) / obj.area() > max_percent_ground_overlap:
+#             obj.set_out_of_scope()
+#             continue
+#         obj.segMask = obj.segMask & np.logical_not(sky) &\
+#             np.logical_not(ground) & np.logical_not(low_confidence)
+#         if float(obj.area()) / float(img_size) < min_object_area:
+#             obj.set_out_of_scope()
