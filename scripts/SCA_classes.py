@@ -362,7 +362,10 @@ class Frame:
         self.results = results
         self.rows, self.cols = Config.get("dimensions")
         self.objects = self.populate_objects()
-        self.cartImg = self.make_cartesian()
+        if Config.get("parallelize_for_gpu"):
+            self.cartImg = self.make_cartesian()
+        else:
+            self.cartImg = self.make_cartesian_no_gpu()
         self.filter_objects()
         self.consolidate_objects()
 
@@ -410,7 +413,10 @@ class Frame:
         max_bright = np.max(rgb_sum)
         bright_cutoff = max_bright * (1 - sky_bright_percent)
         self.sky = np.where(rgb_sum > bright_cutoff, 1, 0)
-        self.ground = self.find_ground()
+        if Config.get("parallelize_for_gpu"):
+            self.ground = self.find_ground()
+        else:
+            self.ground = self.find_ground_no_gpu()
         self.low_confidence = np.where(self.depthImg > Config.get("magic_trust_number"), 1, 0)
         # Debug_Timer.start("actually filter")
         for obj in self.objects:
@@ -733,6 +739,7 @@ class Debug_Timer:
 
 class Config:
     c = None
+    d = {}
 
     @classmethod
     def load(cls, name):
@@ -741,4 +748,10 @@ class Config:
 
     @classmethod
     def get(cls, name):
+        if name in cls.d:
+            return cls.d[name]
         return cls.c[name]
+    
+    @classmethod
+    def define(cls, name, value):
+        cls.d[name] = value

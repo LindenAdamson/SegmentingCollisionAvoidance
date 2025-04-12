@@ -1,3 +1,4 @@
+parallelize_for_gpu: True
 camera_location: [2, 0, 1]
 car_dimensions: [4, 2, 2]
 color_fov: [69, 55] # [horiz, vert]
