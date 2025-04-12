@@ -80,7 +80,7 @@ class Segmentation_Collision_Avoidance:
         plt.title('Sky and Ground')
         plt.imshow(self.window.frame.rgbImg)
         nan_depthImg = np.zeros(frame.depthImg.shape)
-        nan_depthImg = np.where(frame.ground, frame.depthImg, np.nan)
+        nan_depthImg = np.where(frame.ground | frame.sky, frame.depthImg, np.nan)
         plt.imshow(nan_depthImg)
         plt.xlim(0,self.window.frame.rgbImg.shape[1])
         plt.subplot(3, 3, 6)
@@ -106,6 +106,7 @@ class Segmentation_Collision_Avoidance:
             plt.plot(angle_steps, avoidance, c='r')
         else:
             plt.plot(angle_steps, velocities, c='b')
+        plt.ylim(-5,25)
         return fig
     
     def add_image_file(self, rgb, depth):
