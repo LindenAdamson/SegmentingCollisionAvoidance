@@ -16,6 +16,7 @@ Demoing the scripts's current functionality can be done in [Colab](https://colab
 - Parallelization of viable algorithms for GPU utilization
 ### In Progress
 - Testing on data captured with recently motorized velomobile
+- Conversion of "permitted velocity" into steering corrections based on this data
 ### To Come
 - Porting of some or all Python code to C++ for real-time use case feasibility on NVIDIA Jetson Orin Nano
 ### In Consideration
