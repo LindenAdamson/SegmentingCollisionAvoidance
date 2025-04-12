@@ -4,20 +4,20 @@ _Linden Adamson_
 ![Alt Text](https://github.com/LindenAdamson/SegmentingCollisionAvoidance/blob/main/scripts/gifs/cd_rt.gif)
 
 ## Overview
-Segmenting Collision Avoidance is a work-in-progress algorithm for self driving vehicles. It is designed to process RGB-D image data from a stereo camera and return safe trajectories for the ego vehicle to follow by predicting the movement of surrounding objects. It is meant to be paired with another autonomous vehicle model handling higher-level tasks such as following road laws and choosing when to turn, while SCA provides low-level driving adjustments and emergency braking to ensure safety.
+Segmenting Collision Avoidance is a work-in-progress script for self driving vehicles. It is designed to process RGB-D image data from a stereo camera and return safe trajectories for the ego vehicle to follow by predicting the movement of surrounding objects. It is meant to be paired with another autonomous vehicle model handling higher-level tasks such as following road laws and choosing when to turn, while SCA provides low-level driving adjustments and emergency braking to ensure safety.
 
-The algorithm uses Ultralitic's FastSAM model as a first step. The dataset used in the demo was captured in CARLA Simulator.
+This script uses depth estimations from the Luxonis OAK-D's built in stereo depth model, as well as Ultralitic's FastSAM model for image segmentation and object tracking.
 
-Demoing the algorithm's current functionality can be done in [Colab](https://colab.research.google.com/drive/1RuYl2oYogi_rdPMVeIv6bfQhAwWUqGbg?usp=sharing).
+Demoing the scripts's current functionality can be done in [Colab](https://colab.research.google.com/drive/1RuYl2oYogi_rdPMVeIv6bfQhAwWUqGbg?usp=sharing).
 ## Functionality
 ### Complete
-- Isolation of tracked objects' placement in 3D space from background, other noise
-- Predict tracked objects' future movements
+- Isolation of potentially hazardous objects and determination of their placement in space
+- Prediction of tracked objects' future movements
+- Parallelization of viable algorithms for GPU utilization
 ### In Progress
-- Prediction improvements
-- Determine safe trajectories for the ego vehicle
+- Testing on data captured with recently motorized velomobile
 ### To Come
-- Utilization of GPU for real-time use case feasibility
+- Porting of some or all Python code to C++ for real-time use case feasibility on NVIDIA Jetson Orin Nano
 ### In Consideration
 - Support for depth information in point cloud format, eg from a LiDAR device 
 ## About Bike for the Blind
