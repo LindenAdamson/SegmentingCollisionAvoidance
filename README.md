@@ -10,7 +10,7 @@ Segmenting Collision Avoidance is a work-in-progress script for self driving veh
 
 This script uses depth estimations from the Luxonis OAK-D's built in stereo depth model, as well as Ultralitic's FastSAM model for image segmentation and object tracking.
 
-Demoing the scripts's current functionality can be done in [Colab](https://colab.research.google.com/drive/1RuYl2oYogi_rdPMVeIv6bfQhAwWUqGbg?usp=sharing).
+Demoing the scripts's current functionality can be done in [Colab](https://colab.research.google.com/drive/1RuYl2oYogi_rdPMVeIv6bfQhAwWUqGbg?usp=sharing) (not currently up-to-date).
 ## Functionality
 ### Complete
 - Core functionality
