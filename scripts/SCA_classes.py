@@ -4,14 +4,9 @@ import matplotlib.colors as mcolors
 import math
 import cv2
 import yaml
-import numba_functs
-import numba as nb
-import numba.types as nbt
 from ultralytics import FastSAM
 from timeit import default_timer as timer
 from PIL import Image
-from scipy import stats
-from shapely import Polygon, Point
 
 def timeit(func):
     def wrapper(*args, **kwargs):
