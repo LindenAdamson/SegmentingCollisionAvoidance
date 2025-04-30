@@ -21,7 +21,7 @@ max_steering_angle: 30
 distance_steering_prediction: 15
 angle_samples: 51
 safe_distance: .5
-magic_trust_number: 20 #8.45
+too_far_to_care: 20 #8.45
 object_overlap_percent: .8
 measurement_trust: .6
 max_considered_velocity: 20
@@ -29,3 +29,6 @@ bang_bang_steering: [-1, 0, 1] # [left, right, center]
 camera_vertical_height: 1.5
 max_in_scope_entity_height: 2
 min_object_in_scope_percent: .2
+max_possible_entities: 110
+bottom_idxs_for_ground: 10
+least_squares_outlier_stds: 2
