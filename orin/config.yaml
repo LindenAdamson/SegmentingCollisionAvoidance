@@ -1,0 +1,25 @@
+# SCA_classes tuning
+color_fov: [69, 55] # [horiz, vert]
+depth_fov: [72, 49] # [horiz, vert]
+dimensions: [540, 960] #[270, 480] #[540, 960] # [rows, cols]
+min_object_area: .002 # 1000 / 540 * 960
+seconds_into_future: 3
+length_front_to_back_wheels: 2.5 # distance from front to back wheels
+max_steering_angle: 15 #30
+angle_samples: 3 #51
+safe_distance: .5
+too_far_to_care: 20 #8.45
+object_overlap_percent: .8
+max_considered_velocity: 20
+bang_bang_steering: [-1, 0, 1] # [left, right, center]
+camera_vertical_height: 1.5
+max_in_scope_entity_height: 2
+min_object_in_scope_percent: .2
+bottom_idxs_for_ground: 10
+least_squares_outlier_stds: 2
+# emergency_brake tuning
+noise_thresh: 1000
+kblur: 20
+safe_cm: 3000
+boxes: 6
+box_ring: 1 # can't be > boxes / 2
